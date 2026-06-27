@@ -1,0 +1,50 @@
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.4.0",
+    "ruff>=0.14.5",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "integration: needs a running Postgres (e.g. `make up`)",
+]
+
+[tool.ruff]
+src = ["packages", "services", "tests"]
+include = ["packages/**/*.py", "services/**/*.py", "tests/**/*.py"]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"packages/database/src/database/migrations/env.py" = ["INP001", "E402"]
+"packages/database/src/database/migrations/versions/**" = ["ALL"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["adapters", "contracts", "database", "domain", "gateway", "user_service", "sender", "tests"]
+order-by-type = false
+case-sensitive = false
+force-sort-within-sections = true
+force-wrap-aliases = true
+lines-after-imports = 2
+lines-between-types = 1
+combine-as-imports = true
+split-on-trailing-comma = true

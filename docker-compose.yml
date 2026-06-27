@@ -1,0 +1,215 @@
+services:
+  postgres:
+    container_name: q_bot.postgres
+    image: postgres:17-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $$POSTGRES_DB -U $$POSTGRES_USER" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: q_bot.pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: email@example.ru
+      PGADMIN_DEFAULT_PASSWORD: pgadmin_password
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - "8888:80"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  nats:
+    image: nats:latest
+    container_name: q_bot.nats
+    entrypoint: /nats-server
+    command: "-c /config/server.conf"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+      - ./nats/server.conf:/config/server.conf
+    healthcheck:
+      test: [ "CMD", "nats-server", "-sl" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  nats-nui:
+    image: ghcr.io/nats-nui/nui:latest
+    container_name: q_bot.nui
+    ports:
+      - "31311:31311"
+    volumes:
+      - nui-data:/db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: q_bot.redis
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    env_file:
+      - .env
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "$REDIS_PASSWORD" ]
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "$REDIS_PASSWORD", "PING" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  migrations:
+    container_name: q_bot.migrations
+    build:
+      context: .
+      dockerfile: packages/database/Dockerfile
+    restart: on-failure
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  gateway:
+    container_name: q_bot.gateway
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      nats:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  user_service:
+    container_name: q_bot.user_service
+    build:
+      context: .
+      dockerfile: services/user_service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+  sender:
+    container_name: q_bot.sender
+    build:
+      context: .
+      dockerfile: services/sender/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      nats:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+    networks:
+      - q_bot_network
+
+volumes:
+  postgres-data:
+  nats-data:
+  nui-data:
+  redis-data:
+  pgadmin-data:
+
+networks:
+  q_bot_network:
+    name: q_bot_network
